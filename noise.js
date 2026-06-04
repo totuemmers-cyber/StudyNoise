@@ -197,9 +197,14 @@
     // Fold the tail (temp[length .. length + fade]) onto the head so the loop
     // is seamless. out[0] becomes temp[length], the true successor of the
     // body's final sample temp[length - 1].
+    //
+    // The head and tail are uncorrelated stretches of noise, so we blend them
+    // with an EQUAL-POWER crossfade (sin/cos, whose squares sum to 1). An
+    // equal-amplitude crossfade (weights summing to 1) would drop the combined
+    // power by ~3 dB mid-blend, heard as a recurring volume dip once per loop.
     for (let k = 0; k < fade; k++) {
-      const w = 0.5 - 0.5 * Math.cos((Math.PI * k) / fade);
-      out[k] = temp[k] * w + temp[length + k] * (1 - w);
+      const theta = (Math.PI / 2) * (k / fade);
+      out[k] = temp[k] * Math.sin(theta) + temp[length + k] * Math.cos(theta);
     }
 
     return buffer;
