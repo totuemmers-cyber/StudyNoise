@@ -40,12 +40,16 @@ consistent loudness:
 - **Speech Masking** — not a pure colour, but a track tuned to mask the
   *intelligibility* of nearby voices the way office sound-masking systems do.
   Pink noise is shaped with a small filter chain — highpass ~100 Hz (drop
-  sub-bass rumble), a boost around 300–600 Hz (the speech-band peak), and a
-  lowpass ~4.8 kHz (so it isn't hissy) — to concentrate energy in the
-  ~250 Hz–6 kHz band that carries word intelligibility. An optional **babble**
-  envelope (on by default) slowly varies the level at the 2–7 Hz syllabic rate
-  of speech, so it "breathes" like voices and covers them at a lower, more
-  comfortable volume than steady noise. The tuning constants live in the
-  `SPEECH` object near the top of `noise.js`.
+  sub-bass rumble), a boost around 300–600 Hz (the speech-band peak), a
+  high-shelf around 3 kHz that lifts the **consonant band** (2–5 kHz is what
+  actually makes words decodable), and a lowpass ~6.5 kHz to roll off the
+  harshest top — concentrating energy across the ~250 Hz–6 kHz band that
+  carries word intelligibility. It plays in **stereo with decorrelated left/right
+  noise**, which is wider and harder to listen past than a mono source. An
+  optional **babble** envelope (on by default) slowly varies the level at the
+  2–7 Hz syllabic rate of speech for a more natural, voice-like texture; note
+  the steady (babble-off) sound is what commercial masking systems use and is at
+  least as effective at masking — the babble is mostly character. The tuning
+  constants live in the `SPEECH` object near the top of `noise.js`.
 
 See `noise.js` for the implementation.

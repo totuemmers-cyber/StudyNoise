@@ -35,8 +35,11 @@
     peakLoHz: 300, // lower edge of the mid "speech peak" boost band
     peakHiHz: 600, // upper edge of the mid "speech peak" boost band
     peakGain: 1.6, // how strongly to lift the 300–600 Hz peak
-    lowpassHz: 4800, // roll the highs off (~4.5–5 kHz) so it isn't hissy
-    targetRms: 0.12, // quieter than the pure colours: sits just above ambient speech
+    shelfHz: 3000, // high-shelf centre: lift the consonant band above this
+    shelfGain: 1.0, // how strongly to lift the 2–5 kHz consonant cues
+    lowpassHz: 6500, // keep consonant energy, then roll off the harsh top
+    targetRms: 0.15, // quieter than the pure colours: sits just above ambient speech
+    stereo: true, // decorrelated L/R noise — wider, harder to listen past
     babbleFloor: 0.5, // minimum envelope level when babble is on
     babbleMinHz: 2, // syllabic-rate range, low end
     babbleMaxHz: 7, // syllabic-rate range, high end
@@ -212,14 +215,18 @@
   // a syllabic-rate "babble" envelope so it masks the intelligibility of nearby
   // voices at a low, comfortable level. The filter chain — built from the same
   // one-pole primitives as the colours above — is:
-  //   highpass ~100 Hz  ->  +boost 300–600 Hz  ->  lowpass ~4.8 kHz
+  //   highpass ~100 Hz -> +boost 300–600 Hz -> +consonant shelf ~3 kHz
+  //     -> lowpass ~6.5 kHz
+  // The consonant shelf lifts the 2–5 kHz band that actually carries word
+  // intelligibility, so it masks the *words*, not just the vowel rumble.
   function createSpeechMasking(sampleRate) {
     const pink = createPink();
     const aHP = onePoleCoeff(SPEECH.highpassHz, sampleRate);
     const aPeakLo = onePoleCoeff(SPEECH.peakLoHz, sampleRate);
     const aPeakHi = onePoleCoeff(SPEECH.peakHiHz, sampleRate);
+    const aShelf = onePoleCoeff(SPEECH.shelfHz, sampleRate);
     const aLP = onePoleCoeff(SPEECH.lowpassHz, sampleRate);
-    let hp = 0, peakLo = 0, peakHi = 0, lp = 0;
+    let hp = 0, peakLo = 0, peakHi = 0, shelf = 0, lp = 0;
 
     // Syllabic-rate envelope: each segment ramps smoothly to a new random level
     // at a random rate in [babbleMinHz, babbleMaxHz], so the level "breathes"
@@ -228,6 +235,7 @@
 
     return {
       targetRms: SPEECH.targetRms,
+      stereo: SPEECH.stereo,
       next() {
         const p = pink.next();
 
@@ -240,7 +248,11 @@
         peakLo += aPeakLo * (s - peakLo);
         s += SPEECH.peakGain * (peakHi - peakLo);
 
-        // Lowpass ~4.8 kHz: roll off the harsh, hissy highs.
+        // High-shelf ~3 kHz: lift the consonant band (the part above the shelf).
+        shelf += aShelf * (s - shelf);
+        s += SPEECH.shelfGain * (s - shelf);
+
+        // Lowpass ~6.5 kHz: roll off only the harshest top above the consonants.
         lp += aLP * (s - lp);
         s = lp;
 
@@ -309,10 +321,26 @@
     const gen = generators[type](audioCtx.sampleRate);
     const gain = calibrateGain(gen, audioCtx.sampleRate);
 
-    const node = audioCtx.createScriptProcessor(BLOCK_SIZE, 0, 1);
+    // Stereo generators (Speech Masking) drive each channel from an independent
+    // instance so the two ears get decorrelated noise — wider and harder to
+    // listen past. Mono generators write the same sample to both channels,
+    // which is identical to plain mono playback (no change for the colours).
+    const genR = gen.stereo ? generators[type](audioCtx.sampleRate) : null;
+
+    const node = audioCtx.createScriptProcessor(BLOCK_SIZE, 0, 2);
     node.onaudioprocess = (e) => {
-      const out = e.outputBuffer.getChannelData(0);
-      for (let i = 0; i < out.length; i++) out[i] = gen.next() * gain;
+      const outL = e.outputBuffer.getChannelData(0);
+      const outR = e.outputBuffer.getChannelData(1);
+      if (genR) {
+        for (let i = 0; i < outL.length; i++) {
+          outL[i] = gen.next() * gain;
+          outR[i] = genR.next() * gain;
+        }
+      } else {
+        for (let i = 0; i < outL.length; i++) {
+          outL[i] = outR[i] = gen.next() * gain;
+        }
+      }
     };
     node.connect(gainNode);
 
