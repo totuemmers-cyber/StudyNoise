@@ -38,6 +38,9 @@ consistent loudness:
   energy concentrated in the mid frequencies (~500 Hz).
 - **Black** — an ultra-deep rumble (white integrated twice, ~−12 dB/octave).
   Formally "black noise" often means silence; this is the useful audible reading.
+- **Velvet** — sparse noise: mostly silence with one randomly-placed ±1 impulse
+  per short window. Broadly flat like white, but the sparseness sounds smoother
+  and silkier.
 - **Speech Masking** — not a pure colour, but a track tuned to mask the
   *intelligibility* of nearby voices the way office sound-masking systems do.
   Pink noise is shaped with a small filter chain — highpass ~100 Hz (drop
@@ -70,6 +73,10 @@ Plus a few **synthesised ambiences** (also generated live, never looped):
 - **Wind** — pink noise through a band-pass whose centre and level wander, for
   rising and falling gusts.
 - **Campfire** — a warm low bed peppered with random crackles.
+- **Stream** — a babbling brook: a bright band-passed bed that bubbles, with
+  scattered watery gurgles (pitched lower and denser than the rain droplets).
+- **Night** — a quiet summer night: a low drone bed under a chorus of crickets,
+  each a near-pure high tone pulsed at its own trill rate.
 
 A master limiter on the output catches the rare high peaks of the transient
 tracks (rain, fire) so nothing clips at high volume; the steady tracks pass

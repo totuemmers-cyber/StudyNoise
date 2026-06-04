@@ -244,6 +244,25 @@
     };
   }
 
+  // Velvet noise: mostly silence with one randomly-placed ±1 impulse per short
+  // grid window. Its spectrum is broadly flat like white, but the sparseness
+  // makes it sound smoother and silkier, less harsh than full white hiss.
+  function createVelvet(sampleRate) {
+    const grid = Math.max(2, Math.round(sampleRate / 3000)); // ~3000 impulses/s
+    let idx = 0, pos = 0, sign = 1;
+    return {
+      next() {
+        if (idx === 0) {
+          pos = (Math.random() * grid) | 0; // impulse position in this window
+          sign = Math.random() < 0.5 ? -1 : 1;
+        }
+        const out = idx === pos ? sign : 0;
+        if (++idx >= grid) idx = 0;
+        return out;
+      },
+    };
+  }
+
   // One synthetic "voice" for the babble: pink noise coloured by two wandering
   // formant resonators (giving a vowel-like timbre) and shaped by its own
   // syllabic-rate amplitude envelope. Many of these summed make a crowd murmur.
@@ -521,6 +540,99 @@
     };
   }
 
+  // Stream: a babbling brook — a bright band-passed bed that bubbles (a fast
+  // smoothed-random amplitude wobble) with scattered watery gurgles (short
+  // decaying resonators), pitched lower and denser than the rain droplets.
+  function createStream(sampleRate) {
+    const white = createWhite();
+    const aHi = onePoleCoeff(3500, sampleRate); // top of the band
+    const aLo = onePoleCoeff(500, sampleRate); // bottom of the band
+    let lpHi = 0, lpLo = 0;
+    let bubLeft = 0, bubLen = 1, bubFrom = 0.6, bubTo = 0.6;
+    const gurgles = [];
+    for (let i = 0; i < 6; i++) gurgles.push({ y1: 0, y2: 0, r: 0, c: 0 });
+    const pGurgle = 0.0006;
+    function trigger(d) {
+      const f = 300 + Math.random() * 1200;
+      const bw = 40 + Math.random() * 120;
+      d.r = Math.exp((-Math.PI * bw) / sampleRate);
+      d.c = 2 * d.r * Math.cos((2 * Math.PI * f) / sampleRate);
+      d.y1 = 0.4 + Math.random() * 0.7;
+      d.y2 = 0;
+    }
+    return {
+      calibrateSeconds: 2,
+      next() {
+        const w = white.next();
+        lpHi += aHi * (w - lpHi);
+        lpLo += aLo * (w - lpLo);
+        let s = lpHi - lpLo; // band-passed 500–3500 Hz bed
+
+        if (bubLeft <= 0) {
+          bubFrom = bubTo;
+          bubTo = 0.4 + Math.random() * 0.6;
+          const rate = 5 + Math.random() * 6; // ~5–11 Hz bubbling
+          bubLen = Math.max(1, Math.floor(sampleRate / rate));
+          bubLeft = bubLen;
+        }
+        const tt = 1 - bubLeft / bubLen;
+        s *= (bubFrom + (bubTo - bubFrom) * (tt * tt * (3 - 2 * tt))) * 1.4;
+        bubLeft--;
+
+        for (let i = 0; i < gurgles.length; i++) {
+          const d = gurgles[i];
+          if (d.y1 === 0 && d.y2 === 0) {
+            if (Math.random() < pGurgle) trigger(d);
+            else continue;
+          }
+          const y = d.c * d.y1 - d.r * d.r * d.y2;
+          d.y2 = d.y1;
+          d.y1 = y;
+          if (y < 1e-4 && y > -1e-4 && d.y2 < 1e-4 && d.y2 > -1e-4) {
+            d.y1 = 0;
+            d.y2 = 0;
+          }
+          s += y * 0.4;
+        }
+        return s;
+      },
+    };
+  }
+
+  // Night: a quiet summer night — a low drone bed under a chorus of crickets,
+  // each a near-pure high tone pulsed at its own trill rate and phase.
+  function createNight(sampleRate) {
+    const brown = createBrown();
+    const aBed = onePoleCoeff(400, sampleRate);
+    let bedLp = 0;
+    const crickets = [];
+    for (let i = 0; i < 5; i++) {
+      crickets.push({
+        ph: Math.random() * 6.283,
+        cph: Math.random() * 6.283,
+        inc: (2 * Math.PI * (3900 + Math.random() * 1400)) / sampleRate, // tone
+        cinc: (2 * Math.PI * (2.2 + Math.random() * 2)) / sampleRate, // trill rate
+      });
+    }
+    return {
+      calibrateSeconds: 2,
+      next() {
+        const b = brown.next();
+        bedLp += aBed * (b - bedLp);
+        let s = bedLp * 0.8;
+        for (let i = 0; i < crickets.length; i++) {
+          const c = crickets[i];
+          c.ph += c.inc;
+          c.cph += c.cinc;
+          const m = Math.cos(c.cph);
+          const env = m > 0.3 ? ((m - 0.3) / 0.7) ** 2 : 0; // sharp chirp pulses
+          s += Math.sin(c.ph) * env * 0.18;
+        }
+        return s;
+      },
+    };
+  }
+
   const generators = {
     white: createWhite,
     pink: createPink,
@@ -530,10 +642,13 @@
     grey: createGrey,
     green: createGreen,
     black: createBlack,
+    velvet: createVelvet,
     rain: createRain,
     ocean: createOcean,
     wind: createWind,
     fire: createFire,
+    stream: createStream,
+    night: createNight,
     speech: createSpeechMasking,
     rumble: createRumble,
   };
