@@ -18,7 +18,10 @@ python3 -m http.server
 
 ## How the noise is made
 
-Each type fills an audio buffer with a few seconds of samples and loops it:
+Noise is generated **continuously in real time** (via a `ScriptProcessorNode`),
+not by looping a short buffer — so it never repeats and has no seam. Each
+generator keeps its own filter/integrator state and is calibrated to a
+consistent loudness:
 
 - **White** — uniformly random samples; flat spectrum (bright hiss).
 - **Pink** — white noise shaped to roughly −3 dB/octave (Paul Kellet's filter);
