@@ -171,10 +171,37 @@
     black: fillBlack,
   };
 
+  // Builds a buffer that loops without an audible click at the seam.
+  //
+  // Low-frequency noises (brown, black) drift like a random walk, so the last
+  // sample of a plain buffer rarely matches the first — that mismatch is heard
+  // as a recurring crackle once per loop. To avoid it we generate a little
+  // extra audio (a "fade" region) and fold that tail back onto the head with a
+  // raised-cosine crossfade. Because the tail is the natural continuation of
+  // the body, the wrap point becomes perfectly continuous: out[length - 1]
+  // flows into out[0] exactly as the source signal flowed across that sample.
   function buildBuffer(type) {
-    const length = audioCtx.sampleRate * BUFFER_SECONDS;
-    const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
-    fillers[type](buffer.getChannelData(0), audioCtx.sampleRate);
+    const sr = audioCtx.sampleRate;
+    const length = sr * BUFFER_SECONDS;
+    const fade = Math.floor(sr * 0.25);
+
+    const temp = new Float32Array(length + fade);
+    fillers[type](temp, sr);
+
+    const buffer = audioCtx.createBuffer(1, length, sr);
+    const out = buffer.getChannelData(0);
+
+    // Body of the loop.
+    for (let i = fade; i < length; i++) out[i] = temp[i];
+
+    // Fold the tail (temp[length .. length + fade]) onto the head so the loop
+    // is seamless. out[0] becomes temp[length], the true successor of the
+    // body's final sample temp[length - 1].
+    for (let k = 0; k < fade; k++) {
+      const w = 0.5 - 0.5 * Math.cos((Math.PI * k) / fade);
+      out[k] = temp[k] * w + temp[length + k] * (1 - w);
+    }
+
     return buffer;
   }
 
