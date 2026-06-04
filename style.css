@@ -246,17 +246,70 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
+  gap: 0.6rem;
   font-size: 0.82rem;
   color: var(--muted);
   cursor: pointer;
+  transition: opacity 0.2s ease;
 }
 
+/* The checkbox is styled to echo the colour swatches: a glossy circle with an
+   aurora sheen. Lit when on, dim when off. */
 .toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  border-radius: 50%;
   cursor: pointer;
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 42%),
+    conic-gradient(from 210deg, #7c6cff, #ff6ec4, #6ec8ff, #6ddf9c, #e8c06a, #7c6cff);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    0 8px 22px -6px rgba(124, 108, 255, 0.65);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+.toggle input:hover {
+  transform: scale(1.08);
+}
+
+/* On: full-colour aurora that gently shimmers. */
+.toggle input:checked {
+  animation: aurora 6s ease-in-out infinite;
+}
+
+/* Off: drained of colour and glow. */
+.toggle input:not(:checked) {
+  filter: grayscale(0.85) brightness(0.55);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+.toggle input:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    0 0 0 4px rgba(124, 108, 255, 0.45);
+}
+
+@keyframes aurora {
+  0%, 100% { filter: hue-rotate(0deg); }
+  50% { filter: hue-rotate(45deg); }
+}
+
+/* Dimmed + inert when the active track isn't Speech Masking. */
+.toggle.is-disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.toggle.is-disabled input {
+  cursor: default;
+  animation: none;
+  filter: grayscale(0.9) brightness(0.5);
+  transform: none;
 }
 
 .toggle-note {
@@ -271,7 +324,8 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   body::before,
-  .noise.playing .swatch {
+  .noise.playing .swatch,
+  .toggle input:checked {
     animation: none;
   }
 }
