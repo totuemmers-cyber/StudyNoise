@@ -97,7 +97,20 @@
     audioCtx = new AudioCtx();
     gainNode = audioCtx.createGain();
     gainNode.gain.value = parseFloat(volumeSlider.value);
-    gainNode.connect(audioCtx.destination);
+
+    // Master safety limiter: catches the rare high peaks of the transient-rich
+    // tracks (rain droplets, fire crackles) so they can't clip at high volume.
+    // The threshold sits just below full scale, so the steady colours — whose
+    // peaks stay well under it at normal levels — pass through untouched.
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -1.0;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.12;
+
+    gainNode.connect(limiter);
+    limiter.connect(audioCtx.destination);
   }
 
   // One-pole filter coefficient for a given cutoff frequency.
@@ -357,6 +370,157 @@
     };
   }
 
+  // --- Environmental / ambience generators ---------------------------------
+  //
+  // Synthesised in real time, never looped — the same streaming approach as the
+  // colours, just driven by slow modulation (waves, gusts) or sparse transients
+  // (drops, crackle). Tuning constants are inline and easy to nudge.
+
+  // Rumble masking: a low-frequency masker (~40–200 Hz), the non-speech
+  // counterpart to Speech Masking — tuned to cover traffic, footsteps and HVAC
+  // thumps rather than voices. Brown noise band-limited to the rumble region.
+  function createRumble(sampleRate) {
+    const brown = createBrown();
+    const aLp1 = onePoleCoeff(180, sampleRate);
+    const aLp2 = onePoleCoeff(180, sampleRate);
+    const aHp = onePoleCoeff(35, sampleRate);
+    let lp1 = 0, lp2 = 0, hp = 0;
+    return {
+      calibrateSeconds: 1,
+      next() {
+        const s = brown.next();
+        lp1 += aLp1 * (s - lp1);
+        lp2 += aLp2 * (lp1 - lp2); // two-pole lowpass ~180 Hz
+        hp += aHp * (lp2 - hp);
+        return lp2 - hp; // highpass ~35 Hz to drop infrasonic wander
+      },
+    };
+  }
+
+  // Ocean surf: brown noise under a slow swell that modulates both loudness and
+  // brightness, so each wave rises and breaks. Two detuned LFOs keep the rhythm
+  // from sounding mechanically periodic.
+  function createOcean(sampleRate) {
+    const brown = createBrown();
+    let p1 = 0, p2 = Math.PI / 3;
+    const inc1 = (2 * Math.PI * 0.085) / sampleRate; // ~12 s period
+    const inc2 = (2 * Math.PI * 0.057) / sampleRate; // ~17 s period
+    let lp = 0;
+    return {
+      calibrateSeconds: 8,
+      next() {
+        p1 += inc1;
+        p2 += inc2;
+        let swell = 0.5 - 0.25 * Math.cos(p1) - 0.25 * Math.cos(p2); // 0..1
+        if (swell < 0) swell = 0;
+        const a = onePoleCoeff(250 + swell * 1500, sampleRate); // brighter at crest
+        const s = brown.next();
+        lp += a * (s - lp);
+        return lp * (0.2 + 1.1 * swell); // quieter in the trough
+      },
+    };
+  }
+
+  // Wind: pink noise through a band-pass whose centre frequency and level wander
+  // slowly, giving rising and falling gusts.
+  function createWind(sampleRate) {
+    const pink = createPink();
+    let center = 500, targetCenter = 500;
+    let gust = 0.4, targetGust = 0.4;
+    let lpHi = 0, lpLo = 0, ctrl = 0;
+    return {
+      calibrateSeconds: 3,
+      next() {
+        if (ctrl <= 0) {
+          ctrl = 2048;
+          targetCenter = 220 + Math.random() * 900;
+          targetGust = 0.15 + Math.random() * 0.85;
+        }
+        ctrl--;
+        center += 0.00004 * (targetCenter - center); // slow glide (~0.5 s)
+        gust += 0.00004 * (targetGust - gust);
+        const aHi = onePoleCoeff(center * 1.7, sampleRate);
+        const aLo = onePoleCoeff(center * 0.6, sampleRate);
+        const w = pink.next();
+        lpHi += aHi * (w - lpHi);
+        lpLo += aLo * (w - lpLo);
+        return (lpHi - lpLo) * gust * 2.2; // band between the cutoffs, gusting
+      },
+    };
+  }
+
+  // Rain: a band-passed "wash" of distant rain, peppered with discrete droplet
+  // pings — short decaying resonators (poles inside the unit circle, so stable)
+  // re-triggered at random from a small pool of voices.
+  function createRain(sampleRate) {
+    const bed = createPink();
+    const aBedLo = onePoleCoeff(5000, sampleRate);
+    const aBedHi = onePoleCoeff(400, sampleRate);
+    let bedLo = 0, bedHi = 0;
+    const drops = [];
+    for (let i = 0; i < 14; i++) drops.push({ y1: 0, y2: 0, r: 0, c: 0 });
+    const pTrigger = 0.00009; // per voice, per sample (~55 drops/s total)
+    function trigger(d) {
+      const f = 900 + Math.random() * 3500; // droplet pitch
+      const bw = 30 + Math.random() * 120; // ring time
+      d.r = Math.exp((-Math.PI * bw) / sampleRate);
+      d.c = 2 * d.r * Math.cos((2 * Math.PI * f) / sampleRate);
+      d.y1 = 0.5 + Math.random() * 0.9; // initial impulse
+      d.y2 = 0;
+    }
+    return {
+      calibrateSeconds: 2,
+      next() {
+        const b = bed.next();
+        bedLo += aBedLo * (b - bedLo);
+        bedHi += aBedHi * (bedLo - bedHi);
+        let s = (bedLo - bedHi) * 0.6; // band-passed bed
+        for (let i = 0; i < drops.length; i++) {
+          const d = drops[i];
+          if (d.y1 === 0 && d.y2 === 0) {
+            if (Math.random() < pTrigger) trigger(d);
+            else continue;
+          }
+          const y = d.c * d.y1 - d.r * d.r * d.y2; // decaying sinusoid
+          d.y2 = d.y1;
+          d.y1 = y;
+          if (y < 1e-4 && y > -1e-4 && d.y2 < 1e-4 && d.y2 > -1e-4) {
+            d.y1 = 0; // settled -> free the voice
+            d.y2 = 0;
+          }
+          s += y * 0.32;
+        }
+        return s;
+      },
+    };
+  }
+
+  // Campfire: a warm low bed with random crackles and the occasional pop.
+  function createFire(sampleRate) {
+    const bed = createBrown();
+    const aBed = onePoleCoeff(900, sampleRate);
+    const aCr = onePoleCoeff(3000, sampleRate);
+    let bedLp = 0, crLp = 0, burstLeft = 0, burstAmp = 0;
+    return {
+      calibrateSeconds: 2,
+      next() {
+        const b = bed.next();
+        bedLp += aBed * (b - bedLp);
+        let s = bedLp * 1.4;
+        if (burstLeft <= 0 && Math.random() < 0.0008) {
+          burstLeft = Math.floor(sampleRate * (0.002 + Math.random() * 0.03));
+          burstAmp = 0.3 + Math.random() * 0.8;
+        }
+        if (burstLeft > 0) {
+          burstLeft--;
+          crLp += aCr * ((Math.random() * 2 - 1) * burstAmp - crLp);
+          s += crLp; // softened crackle burst
+        }
+        return s;
+      },
+    };
+  }
+
   const generators = {
     white: createWhite,
     pink: createPink,
@@ -366,7 +530,12 @@
     grey: createGrey,
     green: createGreen,
     black: createBlack,
+    rain: createRain,
+    ocean: createOcean,
+    wind: createWind,
+    fire: createFire,
     speech: createSpeechMasking,
+    rumble: createRumble,
   };
 
   // Run the generator for a short warm-up and measure its RMS so we can scale
@@ -374,7 +543,9 @@
   // but the generator keeps its state, so playback continues seamlessly.
   function calibrateGain(gen, sampleRate) {
     const target = gen.targetRms ?? TARGET_RMS;
-    const warmup = Math.floor(sampleRate * 0.5);
+    // Slow swells (ocean) and sparse transients (rain, fire) need a longer
+    // window to measure a representative RMS than the steady colours do.
+    const warmup = Math.floor(sampleRate * (gen.calibrateSeconds ?? 0.5));
     let sumSquares = 0;
     for (let i = 0; i < warmup; i++) {
       const v = gen.next();

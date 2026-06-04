@@ -1,8 +1,9 @@
 # StudyNoise
 
-A tiny, dependency-free web app that generates **white**, **pink**, and **brown**
-noise in the browser using the Web Audio API. Handy as background sound for
-studying or focusing.
+A tiny, dependency-free web app that generates coloured noise (**white**,
+**pink**, **brown** and more), synthesised **ambiences** (rain, ocean, wind,
+campfire) and **sound-masking** tracks in the browser using the Web Audio API.
+Handy as background sound for studying, focusing, relaxing or sleeping.
 
 ## Usage
 
@@ -56,5 +57,22 @@ consistent loudness:
   commercial systems use, which masks just as well; babble is mostly about a
   more natural character. The tuning constants live in the `SPEECH` object near
   the top of `noise.js`.
+- **Rumble Masking** — the low-frequency counterpart to Speech Masking: brown
+  noise band-limited to ~40–200 Hz, tuned to cover non-speech intrusions like
+  traffic, footsteps and HVAC thumps rather than voices.
+
+Plus a few **synthesised ambiences** (also generated live, never looped):
+
+- **Rain** — a band-passed wash of distant rain with scattered droplet pings
+  (each a short, randomly-triggered decaying resonator).
+- **Ocean** — brown noise under a slow swell that modulates loudness and
+  brightness, so each wave rises and breaks.
+- **Wind** — pink noise through a band-pass whose centre and level wander, for
+  rising and falling gusts.
+- **Campfire** — a warm low bed peppered with random crackles.
+
+A master limiter on the output catches the rare high peaks of the transient
+tracks (rain, fire) so nothing clips at high volume; the steady tracks pass
+through it untouched at normal levels.
 
 See `noise.js` for the implementation.
