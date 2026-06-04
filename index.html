@@ -10,7 +10,7 @@
   <canvas id="stars" aria-hidden="true"></canvas>
   <main class="app">
     <h1>StudyNoise</h1>
-    <p class="tagline">Eight shades of noise &mdash; from bright white to deep black &mdash; to help you focus, relax&nbsp;&amp;&nbsp;sleep.</p>
+    <p class="tagline">Eight shades of noise &mdash; from bright white to deep black &mdash; plus a speech-masking track tuned to cover nearby voices, to help you focus, relax&nbsp;&amp;&nbsp;sleep.</p>
 
     <div class="noises">
       <button class="noise" data-type="white">
@@ -53,12 +53,24 @@
         <span class="label">Black</span>
         <span class="desc">Ultra-deep rumble</span>
       </button>
+      <button class="noise" data-type="speech"
+        title="Noise shaped to the speech band (~250 Hz–6 kHz) to mask the words of nearby voices, like office sound masking.">
+        <span class="swatch speech"></span>
+        <span class="label">Speech Masking</span>
+        <span class="desc">Covers nearby voices</span>
+      </button>
     </div>
 
     <div class="controls">
       <label for="volume">Volume</label>
       <input type="range" id="volume" min="0" max="1" step="0.01" value="0.4" />
     </div>
+
+    <label class="toggle"
+      title="Slowly varies the level at the syllabic rate of speech so the masking 'breathes' like voices, covering them at a lower volume. Applies to Speech Masking.">
+      <input type="checkbox" id="babble" checked />
+      <span>Babble envelope <span class="toggle-note">(Speech Masking)</span></span>
+    </label>
 
     <p class="hint">Tap a noise to start or stop it.</p>
   </main>
