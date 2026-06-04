@@ -81,6 +81,22 @@ h1 {
 .swatch.brown {
   background: #8a5a2b;
 }
+.swatch.blue {
+  background: #6ec8ff;
+}
+.swatch.violet {
+  background: #b18cff;
+}
+.swatch.grey {
+  background: #9a9ab0;
+}
+.swatch.green {
+  background: #6ddf9c;
+}
+.swatch.black {
+  background: #2a2a33;
+  border: 1px solid #4a4a58;
+}
 
 .noise.playing .swatch {
   animation: pulse 1.4s ease-in-out infinite;

@@ -25,5 +25,14 @@ Each type fills an audio buffer with a few seconds of samples and loops it:
   balanced and natural sounding.
 - **Brown** — integrated white noise with a small leak, roughly −6 dB/octave;
   deep and rumbling.
+- **Blue** — differentiated pink noise, roughly +3 dB/octave; hissy, airy highs.
+- **Violet** — differentiated white noise, roughly +6 dB/octave; sharp treble.
+- **Grey** — white noise approximately shaped to an equal-loudness curve, so it
+  sounds about as loud across the spectrum (lows and highs boosted, mids
+  scooped). This is an approximation built from one-pole filters.
+- **Green** — informal "nature/ambience" noise; band-passed white noise with
+  energy concentrated in the mid frequencies (~500 Hz).
+- **Black** — an ultra-deep rumble (white integrated twice, ~−12 dB/octave).
+  Formally "black noise" often means silence; this is the useful audible reading.
 
 See `noise.js` for the implementation.
