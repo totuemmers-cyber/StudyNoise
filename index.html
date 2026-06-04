@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyNoise</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <h1>StudyNoise</h1>
+    <p class="tagline">White, pink &amp; brown noise to help you focus.</p>
+
+    <div class="noises">
+      <button class="noise" data-type="white">
+        <span class="swatch white"></span>
+        <span class="label">White</span>
+        <span class="desc">Bright, even hiss</span>
+      </button>
+      <button class="noise" data-type="pink">
+        <span class="swatch pink"></span>
+        <span class="label">Pink</span>
+        <span class="desc">Balanced, natural</span>
+      </button>
+      <button class="noise" data-type="brown">
+        <span class="swatch brown"></span>
+        <span class="label">Brown</span>
+        <span class="desc">Deep, rumbling</span>
+      </button>
+    </div>
+
+    <div class="controls">
+      <label for="volume">Volume</label>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.4" />
+    </div>
+
+    <p class="hint">Tap a noise to start or stop it.</p>
+  </main>
+
+  <script src="noise.js"></script>
+</body>
+</html>
