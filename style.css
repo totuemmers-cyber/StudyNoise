@@ -205,9 +205,6 @@ h1 {
 .noise[data-type="rain"]   { --accent: #7fb0d8; }
 .noise[data-type="ocean"]  { --accent: #2fb8c6; }
 .noise[data-type="wind"]   { --accent: #aecbd2; }
-.noise[data-type="fire"]   { --accent: #ff8a4c; }
-.noise[data-type="stream"] { --accent: #67c9b4; }
-.noise[data-type="night"]  { --accent: #6c74c4; }
 .noise[data-type="speech"] { --accent: #e8c06a; }
 .noise[data-type="rumble"] { --accent: #8a7c66; }
 

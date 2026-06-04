@@ -1,8 +1,8 @@
 # StudyNoise
 
 A tiny, dependency-free web app that generates coloured noise (**white**,
-**pink**, **brown** and more), synthesised **ambiences** (rain, ocean, wind,
-campfire) and **sound-masking** tracks in the browser using the Web Audio API.
+**pink**, **brown** and more), synthesised **ambiences** (rain, ocean, wind)
+and **sound-masking** tracks in the browser using the Web Audio API.
 Handy as background sound for studying, focusing, relaxing or sleeping.
 
 ## Usage
@@ -72,14 +72,9 @@ Plus a few **synthesised ambiences** (also generated live, never looped):
   brightness, so each wave rises and breaks.
 - **Wind** — pink noise through a band-pass whose centre and level wander, for
   rising and falling gusts.
-- **Campfire** — a warm low bed peppered with random crackles.
-- **Stream** — a babbling brook: a bright band-passed bed that bubbles, with
-  scattered watery gurgles (pitched lower and denser than the rain droplets).
-- **Night** — a quiet summer night: a low drone bed under a chorus of crickets,
-  each a near-pure high tone pulsed at its own trill rate.
 
 A master limiter on the output catches the rare high peaks of the transient
-tracks (rain, fire) so nothing clips at high volume; the steady tracks pass
-through it untouched at normal levels.
+Rain droplets so nothing clips at high volume; the steady tracks pass through it
+untouched at normal levels.
 
 See `noise.js` for the implementation.

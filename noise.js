@@ -99,9 +99,9 @@
     gainNode.gain.value = parseFloat(volumeSlider.value);
 
     // Master safety limiter: catches the rare high peaks of the transient-rich
-    // tracks (rain droplets, fire crackles) so they can't clip at high volume.
-    // The threshold sits just below full scale, so the steady colours — whose
-    // peaks stay well under it at normal levels — pass through untouched.
+    // Rain droplets so they can't clip at high volume. The threshold sits just
+    // below full scale, so the steady tracks — whose peaks stay well under it at
+    // normal levels — pass through untouched.
     const limiter = audioCtx.createDynamicsCompressor();
     limiter.threshold.value = -1.0;
     limiter.knee.value = 0;
@@ -514,125 +514,6 @@
     };
   }
 
-  // Campfire: a warm low bed with random crackles and the occasional pop.
-  function createFire(sampleRate) {
-    const bed = createBrown();
-    const aBed = onePoleCoeff(900, sampleRate);
-    const aCr = onePoleCoeff(3000, sampleRate);
-    let bedLp = 0, crLp = 0, burstLeft = 0, burstAmp = 0;
-    return {
-      calibrateSeconds: 2,
-      next() {
-        const b = bed.next();
-        bedLp += aBed * (b - bedLp);
-        let s = bedLp * 1.4;
-        if (burstLeft <= 0 && Math.random() < 0.0008) {
-          burstLeft = Math.floor(sampleRate * (0.002 + Math.random() * 0.03));
-          burstAmp = 0.3 + Math.random() * 0.8;
-        }
-        if (burstLeft > 0) {
-          burstLeft--;
-          crLp += aCr * ((Math.random() * 2 - 1) * burstAmp - crLp);
-          s += crLp; // softened crackle burst
-        }
-        return s;
-      },
-    };
-  }
-
-  // Stream: a babbling brook — a bright band-passed bed that bubbles (a fast
-  // smoothed-random amplitude wobble) with scattered watery gurgles (short
-  // decaying resonators), pitched lower and denser than the rain droplets.
-  function createStream(sampleRate) {
-    const white = createWhite();
-    const aHi = onePoleCoeff(3500, sampleRate); // top of the band
-    const aLo = onePoleCoeff(500, sampleRate); // bottom of the band
-    let lpHi = 0, lpLo = 0;
-    let bubLeft = 0, bubLen = 1, bubFrom = 0.6, bubTo = 0.6;
-    const gurgles = [];
-    for (let i = 0; i < 6; i++) gurgles.push({ y1: 0, y2: 0, r: 0, c: 0 });
-    const pGurgle = 0.0006;
-    function trigger(d) {
-      const f = 300 + Math.random() * 1200;
-      const bw = 40 + Math.random() * 120;
-      d.r = Math.exp((-Math.PI * bw) / sampleRate);
-      d.c = 2 * d.r * Math.cos((2 * Math.PI * f) / sampleRate);
-      d.y1 = 0.4 + Math.random() * 0.7;
-      d.y2 = 0;
-    }
-    return {
-      calibrateSeconds: 2,
-      next() {
-        const w = white.next();
-        lpHi += aHi * (w - lpHi);
-        lpLo += aLo * (w - lpLo);
-        let s = lpHi - lpLo; // band-passed 500–3500 Hz bed
-
-        if (bubLeft <= 0) {
-          bubFrom = bubTo;
-          bubTo = 0.4 + Math.random() * 0.6;
-          const rate = 5 + Math.random() * 6; // ~5–11 Hz bubbling
-          bubLen = Math.max(1, Math.floor(sampleRate / rate));
-          bubLeft = bubLen;
-        }
-        const tt = 1 - bubLeft / bubLen;
-        s *= (bubFrom + (bubTo - bubFrom) * (tt * tt * (3 - 2 * tt))) * 1.4;
-        bubLeft--;
-
-        for (let i = 0; i < gurgles.length; i++) {
-          const d = gurgles[i];
-          if (d.y1 === 0 && d.y2 === 0) {
-            if (Math.random() < pGurgle) trigger(d);
-            else continue;
-          }
-          const y = d.c * d.y1 - d.r * d.r * d.y2;
-          d.y2 = d.y1;
-          d.y1 = y;
-          if (y < 1e-4 && y > -1e-4 && d.y2 < 1e-4 && d.y2 > -1e-4) {
-            d.y1 = 0;
-            d.y2 = 0;
-          }
-          s += y * 0.4;
-        }
-        return s;
-      },
-    };
-  }
-
-  // Night: a quiet summer night — a low drone bed under a chorus of crickets,
-  // each a near-pure high tone pulsed at its own trill rate and phase.
-  function createNight(sampleRate) {
-    const brown = createBrown();
-    const aBed = onePoleCoeff(400, sampleRate);
-    let bedLp = 0;
-    const crickets = [];
-    for (let i = 0; i < 5; i++) {
-      crickets.push({
-        ph: Math.random() * 6.283,
-        cph: Math.random() * 6.283,
-        inc: (2 * Math.PI * (3900 + Math.random() * 1400)) / sampleRate, // tone
-        cinc: (2 * Math.PI * (2.2 + Math.random() * 2)) / sampleRate, // trill rate
-      });
-    }
-    return {
-      calibrateSeconds: 2,
-      next() {
-        const b = brown.next();
-        bedLp += aBed * (b - bedLp);
-        let s = bedLp * 0.8;
-        for (let i = 0; i < crickets.length; i++) {
-          const c = crickets[i];
-          c.ph += c.inc;
-          c.cph += c.cinc;
-          const m = Math.cos(c.cph);
-          const env = m > 0.3 ? ((m - 0.3) / 0.7) ** 2 : 0; // sharp chirp pulses
-          s += Math.sin(c.ph) * env * 0.18;
-        }
-        return s;
-      },
-    };
-  }
-
   const generators = {
     white: createWhite,
     pink: createPink,
@@ -646,9 +527,6 @@
     rain: createRain,
     ocean: createOcean,
     wind: createWind,
-    fire: createFire,
-    stream: createStream,
-    night: createNight,
     speech: createSpeechMasking,
     rumble: createRumble,
   };
@@ -658,8 +536,8 @@
   // but the generator keeps its state, so playback continues seamlessly.
   function calibrateGain(gen, sampleRate) {
     const target = gen.targetRms ?? TARGET_RMS;
-    // Slow swells (ocean) and sparse transients (rain, fire) need a longer
-    // window to measure a representative RMS than the steady colours do.
+    // Slow swells (ocean) and sparse transients (rain) need a longer window to
+    // measure a representative RMS than the steady colours do.
     const warmup = Math.floor(sampleRate * (gen.calibrateSeconds ?? 0.5));
     let sumSquares = 0;
     for (let i = 0; i < warmup; i++) {
