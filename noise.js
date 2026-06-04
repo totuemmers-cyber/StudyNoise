@@ -23,6 +23,30 @@
   const TARGET_RMS = 0.2;
   const BLOCK_SIZE = 4096;
 
+  // --- Speech-masking track tuning ----------------------------------------
+  //
+  // Starting points for the sound-masking filter chain in createSpeechMasking;
+  // all easily tweakable. The idea is to concentrate energy in the band that
+  // carries speech intelligibility (~250 Hz–6 kHz, consonants especially) so it
+  // masks the *words* of nearby voices at a low, comfortable level — the way
+  // office sound-masking systems do — rather than spreading energy flat.
+  const SPEECH = {
+    highpassHz: 100, // drop sub-bass that only adds rumble and wastes energy
+    peakLoHz: 300, // lower edge of the mid "speech peak" boost band
+    peakHiHz: 600, // upper edge of the mid "speech peak" boost band
+    peakGain: 1.6, // how strongly to lift the 300–600 Hz peak
+    lowpassHz: 4800, // roll the highs off (~4.5–5 kHz) so it isn't hissy
+    targetRms: 0.12, // quieter than the pure colours: sits just above ambient speech
+    babbleFloor: 0.5, // minimum envelope level when babble is on
+    babbleMinHz: 2, // syllabic-rate range, low end
+    babbleMaxHz: 7, // syllabic-rate range, high end
+  };
+
+  // "Babble" mode: slowly modulate the level at the syllabic rate so the
+  // envelope feels voice-like (voice-like noise masks voices more efficiently
+  // at lower volume). On by default; toggled live from the UI.
+  let babbleEnabled = true;
+
   let audioCtx = null;
   let gainNode = null;
   let activeNode = null;
@@ -171,6 +195,63 @@
     };
   }
 
+  // Speech-masking noise: pink noise (already weighted toward the lows, a good
+  // base) shaped to approximate a sound-masking spectrum, then optionally given
+  // a syllabic-rate "babble" envelope so it masks the intelligibility of nearby
+  // voices at a low, comfortable level. The filter chain — built from the same
+  // one-pole primitives as the colours above — is:
+  //   highpass ~100 Hz  ->  +boost 300–600 Hz  ->  lowpass ~4.8 kHz
+  function createSpeechMasking(sampleRate) {
+    const pink = createPink();
+    const aHP = onePoleCoeff(SPEECH.highpassHz, sampleRate);
+    const aPeakLo = onePoleCoeff(SPEECH.peakLoHz, sampleRate);
+    const aPeakHi = onePoleCoeff(SPEECH.peakHiHz, sampleRate);
+    const aLP = onePoleCoeff(SPEECH.lowpassHz, sampleRate);
+    let hp = 0, peakLo = 0, peakHi = 0, lp = 0;
+
+    // Syllabic-rate envelope: each segment ramps smoothly to a new random level
+    // at a random rate in [babbleMinHz, babbleMaxHz], so the level "breathes"
+    // like speech instead of holding steady.
+    let segLeft = 0, segLen = 1, envFrom = 1, envTo = 1;
+
+    return {
+      targetRms: SPEECH.targetRms,
+      next() {
+        const p = pink.next();
+
+        // Highpass ~100 Hz: subtract the low-passed (sub-bass) part.
+        hp += aHP * (p - hp);
+        let s = p - hp;
+
+        // Peaking boost ~300–600 Hz: add back a band-passed copy of the signal.
+        peakHi += aPeakHi * (s - peakHi);
+        peakLo += aPeakLo * (s - peakLo);
+        s += SPEECH.peakGain * (peakHi - peakLo);
+
+        // Lowpass ~4.8 kHz: roll off the harsh, hissy highs.
+        lp += aLP * (s - lp);
+        s = lp;
+
+        if (!babbleEnabled) return s;
+
+        // Advance the babble envelope, starting a new ramp when the segment ends.
+        if (segLeft <= 0) {
+          envFrom = envTo;
+          envTo = SPEECH.babbleFloor + Math.random() * (1 - SPEECH.babbleFloor);
+          const rateHz =
+            SPEECH.babbleMinHz +
+            Math.random() * (SPEECH.babbleMaxHz - SPEECH.babbleMinHz);
+          segLen = Math.max(1, Math.floor(sampleRate / rateHz));
+          segLeft = segLen;
+        }
+        const t = 1 - segLeft / segLen;
+        const smooth = t * t * (3 - 2 * t); // smoothstep for natural ramps
+        segLeft--;
+        return s * (envFrom + (envTo - envFrom) * smooth);
+      },
+    };
+  }
+
   const generators = {
     white: createWhite,
     pink: createPink,
@@ -180,12 +261,14 @@
     grey: createGrey,
     green: createGreen,
     black: createBlack,
+    speech: createSpeechMasking,
   };
 
   // Run the generator for a short warm-up and measure its RMS so we can scale
   // every noise to a consistent loudness. The warm-up samples are discarded,
   // but the generator keeps its state, so playback continues seamlessly.
   function calibrateGain(gen, sampleRate) {
+    const target = gen.targetRms ?? TARGET_RMS;
     const warmup = Math.floor(sampleRate * 0.5);
     let sumSquares = 0;
     for (let i = 0; i < warmup; i++) {
@@ -193,7 +276,7 @@
       sumSquares += v * v;
     }
     const rms = Math.sqrt(sumSquares / warmup) || 1e-6;
-    return TARGET_RMS / rms;
+    return target / rms;
   }
 
   function stop() {
@@ -242,4 +325,13 @@
   volumeSlider.addEventListener("input", () => {
     if (gainNode) gainNode.gain.value = parseFloat(volumeSlider.value);
   });
+
+  // Babble toggle (Speech Masking). Applies live to the running stream.
+  const babbleToggle = document.getElementById("babble");
+  if (babbleToggle) {
+    babbleEnabled = babbleToggle.checked;
+    babbleToggle.addEventListener("change", () => {
+      babbleEnabled = babbleToggle.checked;
+    });
+  }
 })();
