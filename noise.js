@@ -40,10 +40,31 @@
     lowpassHz: 6500, // keep consonant energy, then roll off the harsh top
     targetRms: 0.15, // quieter than the pure colours: sits just above ambient speech
     stereo: true, // decorrelated L/R noise — wider, harder to listen past
-    babbleFloor: 0.5, // minimum envelope level when babble is on
+    // Babble: synthetic multi-talker "café" murmur. Summing several
+    // independently-modulated voices fills each other's dips (so there's no
+    // quiet gap for a real voice to peek through, the flaw of single-stream
+    // modulation), and per-voice formant resonances give a vowel-like, speech-
+    // like texture that engages the listener's phonetic processing —
+    // informational masking that flat noise can't provide.
+    talkers: 7, // independent voices summed into the babble
+    formantBwHz: 180, // formant resonator bandwidth (gentle vowel colour)
+    formantGlide: 0.05, // glide toward each new vowel per control tick (~30 ms)
+    ctrlSamples: 64, // control-rate period for updating formant coefficients
+    babbleFloor: 0.4, // minimum level of a single voice's syllabic envelope
     babbleMinHz: 2, // syllabic-rate range, low end
     babbleMaxHz: 7, // syllabic-rate range, high end
   };
+
+  // Typical vowel formant pairs (F1, F2) in Hz — the targets each babble voice
+  // glides between to produce an "aah–ee–oo" murmur.
+  const VOWELS = [
+    [730, 1090], // "a"  (father)
+    [270, 2290], // "ee" (beet)
+    [300, 870], // "oo"  (boot)
+    [530, 1840], // "e"  (bet)
+    [570, 840], // "o"   (bore)
+    [660, 1720], // "ae" (bat)
+  ];
 
   // "Babble" mode: slowly modulate the level at the syllabic rate so the
   // envelope feels voice-like (voice-like noise masks voices more efficiently
@@ -210,17 +231,92 @@
     };
   }
 
-  // Speech-masking noise: pink noise (already weighted toward the lows, a good
-  // base) shaped to approximate a sound-masking spectrum, then optionally given
-  // a syllabic-rate "babble" envelope so it masks the intelligibility of nearby
-  // voices at a low, comfortable level. The filter chain — built from the same
-  // one-pole primitives as the colours above — is:
+  // One synthetic "voice" for the babble: pink noise coloured by two wandering
+  // formant resonators (giving a vowel-like timbre) and shaped by its own
+  // syllabic-rate amplitude envelope. Many of these summed make a crowd murmur.
+  function createBabbleVoice(sampleRate) {
+    const pink = createPink();
+
+    // Two-pole resonators with poles at radius r: stable, gentle vowel peaks.
+    const r = Math.exp((-Math.PI * SPEECH.formantBwHz) / sampleRate);
+    const r2 = r * r;
+    const g = 1 - r; // keeps each formant's peak gain ~constant and bounded
+    let f1 = 500, f2 = 1500; // current (glided) formant centres
+    let t1 = 500, t2 = 1500; // vowel targets
+    let c1 = Math.cos((2 * Math.PI * f1) / sampleRate); // 2·cosθ lives in the loop
+    let c2 = Math.cos((2 * Math.PI * f2) / sampleRate);
+    let a1 = 0, a2 = 0, b1 = 0, b2 = 0; // resonator delay states
+    let ctrl = 0;
+
+    // Per-voice syllabic envelope (smoothstep ramps between random levels).
+    let segLeft = 0, segLen = 1, envFrom = 1, envTo = 1;
+
+    return {
+      next() {
+        // Control-rate: glide the formant centres toward the current vowel and
+        // refresh the resonator coefficients (cheap; they move slowly).
+        if (ctrl <= 0) {
+          ctrl = SPEECH.ctrlSamples;
+          f1 += SPEECH.formantGlide * (t1 - f1);
+          f2 += SPEECH.formantGlide * (t2 - f2);
+          c1 = Math.cos((2 * Math.PI * f1) / sampleRate);
+          c2 = Math.cos((2 * Math.PI * f2) / sampleRate);
+        }
+        ctrl--;
+
+        // New syllable: pick a new envelope target, rate, and vowel.
+        if (segLeft <= 0) {
+          envFrom = envTo;
+          envTo = SPEECH.babbleFloor + Math.random() * (1 - SPEECH.babbleFloor);
+          const rateHz =
+            SPEECH.babbleMinHz +
+            Math.random() * (SPEECH.babbleMaxHz - SPEECH.babbleMinHz);
+          segLen = Math.max(1, Math.floor(sampleRate / rateHz));
+          segLeft = segLen;
+          const v = VOWELS[(Math.random() * VOWELS.length) | 0];
+          t1 = v[0];
+          t2 = v[1];
+        }
+        const tt = 1 - segLeft / segLen;
+        const env = envFrom + (envTo - envFrom) * (tt * tt * (3 - 2 * tt));
+        segLeft--;
+
+        const x = pink.next();
+        const y1 = g * x + 2 * r * c1 * a1 - r2 * a2; // formant 1
+        a2 = a1;
+        a1 = y1;
+        const y2 = g * x + 2 * r * c2 * b1 - r2 * b2; // formant 2
+        b2 = b1;
+        b1 = y2;
+        return (y1 + y2) * env;
+      },
+    };
+  }
+
+  // Speech-masking noise: a source shaped to approximate a sound-masking
+  // spectrum, so it masks the intelligibility of nearby voices at a low,
+  // comfortable level. The shaping chain — built from the same one-pole
+  // primitives as the colours above — is:
   //   highpass ~100 Hz -> +boost 300–600 Hz -> +consonant shelf ~3 kHz
   //     -> lowpass ~6.5 kHz
   // The consonant shelf lifts the 2–5 kHz band that actually carries word
   // intelligibility, so it masks the *words*, not just the vowel rumble.
+  //
+  // The source is chosen once at creation: steady pink noise (the clean,
+  // habituating baseline that commercial systems use), or — when babble is on —
+  // a sum of independently-modulated formant voices (a café murmur that fills
+  // its own dips and adds speech-like, informational masking).
   function createSpeechMasking(sampleRate) {
-    const pink = createPink();
+    const useBabble = babbleEnabled;
+    const voices = [];
+    if (useBabble) {
+      for (let i = 0; i < SPEECH.talkers; i++) {
+        voices.push(createBabbleVoice(sampleRate));
+      }
+    }
+    const pink = useBabble ? null : createPink();
+    const srcNorm = useBabble ? 1 / Math.sqrt(SPEECH.talkers) : 1;
+
     const aHP = onePoleCoeff(SPEECH.highpassHz, sampleRate);
     const aPeakLo = onePoleCoeff(SPEECH.peakLoHz, sampleRate);
     const aPeakHi = onePoleCoeff(SPEECH.peakHiHz, sampleRate);
@@ -228,20 +324,22 @@
     const aLP = onePoleCoeff(SPEECH.lowpassHz, sampleRate);
     let hp = 0, peakLo = 0, peakHi = 0, shelf = 0, lp = 0;
 
-    // Syllabic-rate envelope: each segment ramps smoothly to a new random level
-    // at a random rate in [babbleMinHz, babbleMaxHz], so the level "breathes"
-    // like speech instead of holding steady.
-    let segLeft = 0, segLen = 1, envFrom = 1, envTo = 1;
-
     return {
       targetRms: SPEECH.targetRms,
       stereo: SPEECH.stereo,
       next() {
-        const p = pink.next();
+        let src;
+        if (useBabble) {
+          let sum = 0;
+          for (let i = 0; i < voices.length; i++) sum += voices[i].next();
+          src = sum * srcNorm;
+        } else {
+          src = pink.next();
+        }
 
         // Highpass ~100 Hz: subtract the low-passed (sub-bass) part.
-        hp += aHP * (p - hp);
-        let s = p - hp;
+        hp += aHP * (src - hp);
+        let s = src - hp;
 
         // Peaking boost ~300–600 Hz: add back a band-passed copy of the signal.
         peakHi += aPeakHi * (s - peakHi);
@@ -254,24 +352,7 @@
 
         // Lowpass ~6.5 kHz: roll off only the harshest top above the consonants.
         lp += aLP * (s - lp);
-        s = lp;
-
-        if (!babbleEnabled) return s;
-
-        // Advance the babble envelope, starting a new ramp when the segment ends.
-        if (segLeft <= 0) {
-          envFrom = envTo;
-          envTo = SPEECH.babbleFloor + Math.random() * (1 - SPEECH.babbleFloor);
-          const rateHz =
-            SPEECH.babbleMinHz +
-            Math.random() * (SPEECH.babbleMaxHz - SPEECH.babbleMinHz);
-          segLen = Math.max(1, Math.floor(sampleRate / rateHz));
-          segLeft = segLen;
-        }
-        const t = 1 - segLeft / segLen;
-        const smooth = t * t * (3 - 2 * t); // smoothstep for natural ramps
-        segLeft--;
-        return s * (envFrom + (envTo - envFrom) * smooth);
+        return lp;
       },
     };
   }
@@ -368,11 +449,17 @@
     if (gainNode) gainNode.gain.value = parseFloat(volumeSlider.value);
   });
 
-  // Babble toggle (Speech Masking). Applies live to the running stream.
+  // Babble toggle (Speech Masking). The babble vs steady source is chosen when
+  // the generator is built, so if Speech Masking is already playing we rebuild
+  // it to apply (and recalibrate) the new mode; otherwise just record the flag.
   if (babbleToggle) {
     babbleEnabled = babbleToggle.checked;
     babbleToggle.addEventListener("change", () => {
       babbleEnabled = babbleToggle.checked;
+      if (activeType === "speech") {
+        stop();
+        play("speech");
+      }
     });
   }
   refreshBabbleToggle();

@@ -46,10 +46,15 @@ consistent loudness:
   harshest top — concentrating energy across the ~250 Hz–6 kHz band that
   carries word intelligibility. It plays in **stereo with decorrelated left/right
   noise**, which is wider and harder to listen past than a mono source. An
-  optional **babble** envelope (on by default) slowly varies the level at the
-  2–7 Hz syllabic rate of speech for a more natural, voice-like texture; note
-  the steady (babble-off) sound is what commercial masking systems use and is at
-  least as effective at masking — the babble is mostly character. The tuning
-  constants live in the `SPEECH` object near the top of `noise.js`.
+  optional **café babble** mode (on by default) replaces the steady source with
+  a sum of several independently-modulated synthetic voices, each coloured by
+  wandering vowel-formant resonances. Summing the voices fills each other's
+  level dips (so there's no quiet gap for a real voice to peek through), while
+  the formant motion adds a speech-like texture that engages the listener's
+  phonetic processing — a touch of *informational* masking that flat noise can't
+  provide. Turning it **off** gives the steady, habituating noise that
+  commercial systems use, which masks just as well; babble is mostly about a
+  more natural character. The tuning constants live in the `SPEECH` object near
+  the top of `noise.js`.
 
 See `noise.js` for the implementation.
