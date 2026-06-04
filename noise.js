@@ -47,6 +47,10 @@
     // like texture that engages the listener's phonetic processing —
     // informational masking that flat noise can't provide.
     talkers: 7, // independent voices summed into the babble
+    formantGain: 0.1, // how much vowel-formant colour to add ON TOP of the
+    //                   broadband voice; small, so the masking spectrum (and so
+    //                   the sound) stays within ~3 dB of the steady track
+
     formantBwHz: 180, // formant resonator bandwidth (gentle vowel colour)
     formantGlide: 0.05, // glide toward each new vowel per control tick (~30 ms)
     ctrlSamples: 64, // control-rate period for updating formant coefficients
@@ -320,7 +324,10 @@
         const y2 = g * x + 2 * r * c2 * b1 - r2 * b2; // formant 2
         b2 = b1;
         b1 = y2;
-        return (y1 + y2) * env;
+        // Keep the broadband voice and add only a touch of formant colour — the
+        // resonators alone are a narrow low-mid band that sounds nothing like
+        // the masking spectrum (a hollow roar). The dry x preserves the highs.
+        return (x + SPEECH.formantGain * (y1 + y2)) * env;
       },
     };
   }
