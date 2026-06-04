@@ -54,6 +54,18 @@
 
   const buttons = document.querySelectorAll(".noise");
   const volumeSlider = document.getElementById("volume");
+  const babbleToggle = document.getElementById("babble");
+  const babbleToggleLabel = document.querySelector(".toggle");
+
+  // The babble toggle only affects Speech Masking, so dim and disable it
+  // whenever the active track is a different noise (or, while it's relevant,
+  // light it up). Keeps the control clearly scoped to the one track it changes.
+  function refreshBabbleToggle() {
+    if (!babbleToggle || !babbleToggleLabel) return;
+    const relevant = activeType === null || activeType === "speech";
+    babbleToggle.disabled = !relevant;
+    babbleToggleLabel.classList.toggle("is-disabled", !relevant);
+  }
 
   function ensureContext() {
     if (audioCtx) return;
@@ -287,6 +299,7 @@
     }
     activeType = null;
     buttons.forEach((b) => b.classList.remove("playing"));
+    refreshBabbleToggle();
   }
 
   function play(type) {
@@ -308,6 +321,7 @@
     buttons.forEach((b) =>
       b.classList.toggle("playing", b.dataset.type === type)
     );
+    refreshBabbleToggle();
   }
 
   buttons.forEach((button) => {
@@ -327,11 +341,11 @@
   });
 
   // Babble toggle (Speech Masking). Applies live to the running stream.
-  const babbleToggle = document.getElementById("babble");
   if (babbleToggle) {
     babbleEnabled = babbleToggle.checked;
     babbleToggle.addEventListener("change", () => {
       babbleEnabled = babbleToggle.checked;
     });
   }
+  refreshBabbleToggle();
 })();
