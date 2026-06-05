@@ -19,10 +19,10 @@ python3 -m http.server
 
 ## How the noise is made
 
-Noise is generated **continuously in real time** (via a `ScriptProcessorNode`),
-not by looping a short buffer — so it never repeats and has no seam. Each
-generator keeps its own filter/integrator state and is calibrated to a
-consistent loudness:
+Noise is generated **continuously in real time** (sample by sample), not by
+looping a short buffer — so it never repeats and has no seam. Each generator
+keeps its own filter/integrator state and is calibrated to a consistent
+loudness:
 
 - **White** — uniformly random samples; flat spectrum (bright hiss).
 - **Pink** — white noise shaped to roughly −3 dB/octave (Paul Kellet's filter);
@@ -77,4 +77,16 @@ A master limiter on the output catches the rare high peaks of the transient
 Rain droplets so nothing clips at high volume; the steady tracks pass through it
 untouched at normal levels.
 
-See `noise.js` for the implementation.
+### Audio thread
+
+The generators run inside an **AudioWorklet** — on the browser's dedicated
+real-time audio thread — so sample generation is isolated from main-thread
+rendering and garbage collection. (Doing it on the main thread, as the old
+`ScriptProcessorNode` did, lets the audio buffer underrun whenever the main
+thread is briefly busy, which is heard as occasional pops/crackle.) The shared,
+DOM-free DSP lives in `noise-dsp.js` so it can run in both the worklet
+(`noise-worklet.js`) and — as an automatic fallback where the worklet module
+can't be loaded, e.g. from a `file://` path — a `ScriptProcessorNode` on the
+main thread. `noise.js` is just the UI controller and graph wiring.
+
+See `noise-dsp.js` for the generators and `noise.js` for the playback wiring.
