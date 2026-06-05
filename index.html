@@ -105,6 +105,18 @@
       <input type="range" id="volume" min="0" max="1" step="0.01" value="0.4" />
     </div>
 
+    <div class="controls timer-row">
+      <label for="timer">Sleep timer</label>
+      <select id="timer" title="Fade out and stop after the chosen time. Off = endless.">
+        <option value="0">Off</option>
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="45">45 min</option>
+        <option value="60">60 min</option>
+      </select>
+      <span id="timer-remaining" class="timer-remaining"></span>
+    </div>
+
     <label class="toggle"
       title="Layers several synthetic voices into a soft café murmur — a more natural, speech-like masking texture. Off gives steady noise, which masks just as well. Applies to Speech Masking.">
       <input type="checkbox" id="babble" checked />

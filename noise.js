@@ -7,7 +7,8 @@
 // volume dip). Streaming the samples on the fly avoids all of that: the output
 // never repeats and has no seam. The audio graph is:
 //
-//   ScriptProcessorNode (streaming) -> GainNode (volume) -> destination
+//   ScriptProcessorNode (streaming) -> fade GainNode (per-source, anti-click)
+//     -> volume GainNode -> DynamicsCompressor (limiter) -> destination
 //
 // (ScriptProcessorNode is deprecated in favour of AudioWorklet, but it works
 // everywhere — including from a local file:// path — and is more than fast
@@ -22,6 +23,9 @@
   // similar perceived loudness; the volume slider scales from there.
   const TARGET_RMS = 0.2;
   const BLOCK_SIZE = 4096;
+  const FADE = 0.04; // short anti-click ramp on start/stop/switch (seconds)
+  const SLEEP_FADE = 4; // gentle fade-out at the end of a sleep timer (seconds)
+  const STORE_KEY = "studynoise"; // localStorage key for persisted settings
 
   // --- Speech-masking track tuning ----------------------------------------
   //
@@ -76,14 +80,55 @@
   let babbleEnabled = true;
 
   let audioCtx = null;
-  let gainNode = null;
-  let activeNode = null;
+  let gainNode = null; // master volume (driven by the slider)
+  let activeNode = null; // { script, env } of the currently playing source
   let activeType = null;
+
+  // Sleep timer state (not persisted — endless playback is the default).
+  let timerMinutes = 0;
+  let timerEndAt = 0;
+  let timerTickId = null;
 
   const buttons = document.querySelectorAll(".noise");
   const volumeSlider = document.getElementById("volume");
   const babbleToggle = document.getElementById("babble");
   const babbleToggleLabel = document.querySelector(".toggle");
+  const timerSelect = document.getElementById("timer");
+  const timerDisplay = document.getElementById("timer-remaining");
+
+  // --- Persistence ---------------------------------------------------------
+  // Remember volume and the café-babble preference across reloads. The last
+  // track is deliberately not auto-resumed: browsers block autoplaying sound
+  // without a gesture, and waking a sleeper on page load would be unwelcome.
+  function saveSettings() {
+    try {
+      localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify({
+          volume: parseFloat(volumeSlider.value),
+          babble: babbleToggle ? babbleToggle.checked : true,
+        })
+      );
+    } catch (err) {
+      /* storage unavailable (private mode, etc.) — just don't persist */
+    }
+  }
+
+  function loadSettings() {
+    let s;
+    try {
+      s = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+    } catch (err) {
+      return;
+    }
+    if (typeof s.volume === "number" && s.volume >= 0 && s.volume <= 1) {
+      volumeSlider.value = String(s.volume);
+    }
+    if (typeof s.babble === "boolean" && babbleToggle) {
+      babbleToggle.checked = s.babble;
+    }
+  }
+  loadSettings();
 
   // The babble toggle only affects Speech Masking, so dim and disable it
   // whenever the active track is a different noise (or, while it's relevant,
@@ -555,13 +600,37 @@
     return target / rms;
   }
 
-  function stop() {
+  // Ramp a source's own gain down to silence, then disconnect it once the ramp
+  // has finished — so stopping never produces a click. Each source carries its
+  // own envelope gain, so an outgoing source can fade out while a new one fades
+  // in (a brief crossfade on track switches).
+  function fadeOutAndTeardown(node, fadeSec) {
+    const now = audioCtx.currentTime;
+    try {
+      node.env.gain.cancelScheduledValues(now);
+      node.env.gain.setValueAtTime(node.env.gain.value, now);
+      node.env.gain.linearRampToValueAtTime(0, now + fadeSec);
+    } catch (err) {
+      /* ignore */
+    }
+    setTimeout(() => {
+      try {
+        node.script.disconnect();
+        node.env.disconnect();
+      } catch (err) {
+        /* ignore */
+      }
+      node.script.onaudioprocess = null;
+    }, fadeSec * 1000 + 50);
+  }
+
+  function stop(fadeSec) {
     if (activeNode) {
-      activeNode.disconnect();
-      activeNode.onaudioprocess = null;
+      fadeOutAndTeardown(activeNode, fadeSec === undefined ? FADE : fadeSec);
       activeNode = null;
     }
     activeType = null;
+    clearSleepTimer();
     buttons.forEach((b) => b.classList.remove("playing"));
     refreshBabbleToggle();
   }
@@ -579,8 +648,8 @@
     // which is identical to plain mono playback (no change for the colours).
     const genR = gen.stereo ? generators[type](audioCtx.sampleRate) : null;
 
-    const node = audioCtx.createScriptProcessor(BLOCK_SIZE, 0, 2);
-    node.onaudioprocess = (e) => {
+    const script = audioCtx.createScriptProcessor(BLOCK_SIZE, 0, 2);
+    script.onaudioprocess = (e) => {
       const outL = e.outputBuffer.getChannelData(0);
       const outR = e.outputBuffer.getChannelData(1);
       if (genR) {
@@ -594,14 +663,23 @@
         }
       }
     };
-    node.connect(gainNode);
 
-    activeNode = node;
+    // Per-source envelope gain, ramped 0 -> 1 so playback starts without a click.
+    const env = audioCtx.createGain();
+    const now = audioCtx.currentTime;
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(1, now + FADE);
+
+    script.connect(env);
+    env.connect(gainNode);
+
+    activeNode = { script, env };
     activeType = type;
     buttons.forEach((b) =>
       b.classList.toggle("playing", b.dataset.type === type)
     );
     refreshBabbleToggle();
+    startSleepTimer();
   }
 
   buttons.forEach((button) => {
@@ -617,7 +695,15 @@
   });
 
   volumeSlider.addEventListener("input", () => {
-    if (gainNode) gainNode.gain.value = parseFloat(volumeSlider.value);
+    if (gainNode) {
+      // Glide to the new level instead of jumping, to avoid zipper noise.
+      gainNode.gain.setTargetAtTime(
+        parseFloat(volumeSlider.value),
+        audioCtx.currentTime,
+        0.02
+      );
+    }
+    saveSettings();
   });
 
   // Babble toggle (Speech Masking). The babble vs steady source is chosen when
@@ -627,6 +713,7 @@
     babbleEnabled = babbleToggle.checked;
     babbleToggle.addEventListener("change", () => {
       babbleEnabled = babbleToggle.checked;
+      saveSettings();
       if (activeType === "speech") {
         stop();
         play("speech");
@@ -634,4 +721,58 @@
     });
   }
   refreshBabbleToggle();
+
+  // --- Sleep timer ---------------------------------------------------------
+  // Optional: after the chosen number of minutes, gently fade the sound out and
+  // stop. "Off" (endless playback) is the default. The countdown restarts when
+  // a (new) track starts and clears when playback stops.
+  function updateTimerDisplay() {
+    if (!timerDisplay) return;
+    if (!timerEndAt) {
+      timerDisplay.textContent = "";
+      return;
+    }
+    const total = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    timerDisplay.textContent = m + ":" + String(s).padStart(2, "0");
+  }
+
+  function clearSleepTimer() {
+    if (timerTickId) {
+      clearInterval(timerTickId);
+      timerTickId = null;
+    }
+    timerEndAt = 0;
+    updateTimerDisplay();
+  }
+
+  function startSleepTimer() {
+    if (timerTickId) {
+      clearInterval(timerTickId);
+      timerTickId = null;
+    }
+    if (timerMinutes <= 0 || !activeType) {
+      timerEndAt = 0;
+      updateTimerDisplay();
+      return;
+    }
+    timerEndAt = Date.now() + timerMinutes * 60000;
+    timerTickId = setInterval(() => {
+      if (timerEndAt && Date.now() >= timerEndAt) {
+        stop(SLEEP_FADE); // gentle fade-out, then stop (also clears the timer)
+      } else {
+        updateTimerDisplay();
+      }
+    }, 1000);
+    updateTimerDisplay();
+  }
+
+  if (timerSelect) {
+    timerSelect.addEventListener("change", () => {
+      timerMinutes = parseInt(timerSelect.value, 10) || 0;
+      if (activeType) startSleepTimer();
+      else clearSleepTimer();
+    });
+  }
 })();

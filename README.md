@@ -8,7 +8,10 @@ Handy as background sound for studying, focusing, relaxing or sleeping.
 ## Usage
 
 Open `index.html` in any modern browser, then tap a noise to start or stop it.
-Use the slider to set the volume.
+Use the slider to set the volume. Starting, stopping and switching tracks are
+fade-smoothed so there are no clicks. An optional **sleep timer** fades the
+sound out and stops after 15–60 minutes (default: off / endless). Your volume
+and café-babble preference are remembered across reloads.
 
 To serve it locally:
 
