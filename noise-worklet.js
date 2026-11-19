@@ -5,20 +5,16 @@
 //
 // noise-dsp.js is added to the worklet scope just before this file and
 // publishes globalThis.StudyNoiseDSP. One processor is created per playing
-// source; the track, babble mode and calibrated gain arrive in
-// processorOptions. Fades are applied outside by a GainNode, so the processor
-// simply streams samples until it is told to stop.
+// track; the track, babble mode and calibrated gain arrive in
+// processorOptions. Fades and the track's level are applied outside by
+// GainNodes, so the processor simply streams samples until it is told to stop.
 
 class NoiseProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const { type, babble, gain } = options.processorOptions;
-    const create = globalThis.StudyNoiseDSP.generators[type];
     this.gain = gain;
-    this.gen = create(sampleRate, { babble });
-    // Stereo tracks (Speech Masking) drive each channel from its own generator
-    // so the two ears get decorrelated noise.
-    this.genR = this.gen.stereo ? create(sampleRate, { babble }) : null;
+    this.gen = globalThis.StudyNoiseDSP.generators[type](sampleRate, { babble });
     this.running = true;
     this.port.onmessage = (e) => {
       if (e.data === "stop") this.running = false;
@@ -34,19 +30,16 @@ class NoiseProcessor extends AudioWorkletProcessor {
     const right = out.length > 1 ? out[1] : null;
     const gain = this.gain;
     const gen = this.gen;
-    const genR = this.genR;
 
-    if (genR && right) {
+    // Every track is stereo: next() yields the left sample and leaves the
+    // matching right one in gen.right.
+    if (right) {
       for (let i = 0; i < left.length; i++) {
         left[i] = gen.next() * gain;
-        right[i] = genR.next() * gain;
+        right[i] = gen.right * gain;
       }
     } else {
-      for (let i = 0; i < left.length; i++) {
-        const v = gen.next() * gain;
-        left[i] = v;
-        if (right) right[i] = v;
-      }
+      for (let i = 0; i < left.length; i++) left[i] = gen.next() * gain;
     }
     return true;
   }

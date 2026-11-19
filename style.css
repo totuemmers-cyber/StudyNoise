@@ -113,18 +113,14 @@ h1 {
   gap: 0.7rem;
 }
 
+/* A track card: a toggle button, plus a level slider (added by noise.js) that
+   takes the place of the description line while the track is in the mix. */
 .noise {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 1.25rem 0.6rem 1.1rem;
   border: 1px solid var(--card-border);
   border-radius: 18px;
   background: var(--card);
   color: var(--text);
-  cursor: pointer;
   overflow: hidden;
   transition: transform 0.18s ease, border-color 0.18s ease,
     background 0.18s ease, box-shadow 0.18s ease;
@@ -136,8 +132,29 @@ h1 {
   border-color: rgba(255, 255, 255, 0.16);
 }
 
-.noise:active {
+.noise:has(.noise-btn:active) {
   transform: translateY(-1px) scale(0.99);
+}
+
+.noise-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 1.25rem 0.6rem 1.1rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.noise-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, #fff);
+  outline-offset: -3px;
 }
 
 .noise.playing {
@@ -192,6 +209,67 @@ h1 {
   color: var(--muted);
 }
 
+/* The level slider sits over the description's slot, so a card keeps its size
+   when it starts playing. Tall enough to grab with a thumb. */
+.level {
+  position: absolute;
+  left: 0.9rem;
+  bottom: 0.45rem;
+  width: calc(100% - 1.8rem);
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.noise.playing .level {
+  visibility: visible;
+}
+
+.noise.playing .desc {
+  visibility: hidden;
+}
+
+.level::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.level::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.level::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.level::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.level:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, #fff);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
 /* Per-noise accent colours drive swatch, glow and active ring. */
 .noise[data-type="white"]  { --accent: #f4f4f8; }
 .noise[data-type="pink"]   { --accent: #ff9ec4; }
@@ -225,6 +303,63 @@ h1 {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+/* Play / pause for the whole mix. */
+.transport {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.18s ease,
+    box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.transport svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.transport .icon-pause,
+.transport.is-playing .icon-play {
+  display: none;
+}
+
+.transport.is-playing .icon-pause {
+  display: block;
+}
+
+.transport:hover:not(:disabled) {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.transport.is-playing {
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: 0 8px 22px -8px var(--accent);
+}
+
+.transport.is-playing:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+
+.transport:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.transport:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(124, 108, 255, 0.5);
 }
 
 .timer-row {
@@ -378,6 +513,16 @@ h1 {
   margin: 1.4rem 0 0;
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* The system has paused the audio under a mix that is still switched on:
+   stop the cards pulsing as if they were sounding, and flag the notice. */
+.is-stalled .noise.playing .swatch {
+  animation-play-state: paused;
+}
+
+.is-stalled .hint {
+  color: #e8c06a;
 }
 
 @media (prefers-reduced-motion: reduce) {

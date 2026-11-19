@@ -17,9 +17,29 @@
 (function (scope) {
   "use strict";
 
-  // Each generator is calibrated to this RMS level so all noises sit at a
-  // similar perceived loudness; the volume slider scales from there.
-  const TARGET_RMS = 0.2;
+  // --- Loudness and stereo -------------------------------------------------
+  //
+  // Every track is calibrated to the same A-WEIGHTED level, so they sound about
+  // equally loud at one volume setting. Plain RMS doesn't do that: the ear is
+  // far less sensitive to lows, so a deep rumble and a bright hiss of equal RMS
+  // are a long way apart in loudness (16 dB between Rumble and Rain, measured).
+  // A-weighting follows the ear's sensitivity at the quiet levels background
+  // noise is played at.
+  const TARGET_LOUDNESS_DB = -20; // A-weighted RMS, in dB re full scale
+  // No track may exceed this plain RMS, whatever its weighting says: beyond it
+  // the peaks of a Gaussian-like noise start to clip. The deepest tracks (Black
+  // and Rumble, and Ocean to a lesser degree) hit their ceiling before they
+  // reach the loudness target, so they stay quieter than the rest — there is
+  // no clean headroom left to bring them up. A track can set a lower ceiling
+  // of its own with `maxRms`.
+  const MAX_RMS = 0.2;
+  // Calibration runs the slow modulators (ocean swell, wind gusts, babble
+  // syllables) this many times faster, so a second or so of measurement sees
+  // the long-term level rather than whichever swell or gust came first.
+  const CAL_SPEED = 128;
+  // Stereo width: 1 = the two ears get fully independent noise (wide, "around
+  // you"), 0 = identical channels (mono, a point in the middle of the head).
+  const STEREO_WIDTH = 1;
 
   // --- Speech-masking track tuning ----------------------------------------
   //
@@ -36,8 +56,9 @@
     shelfHz: 3000, // high-shelf centre: lift the consonant band above this
     shelfGain: 1.0, // how strongly to lift the 2–5 kHz consonant cues
     lowpassHz: 6500, // keep consonant energy, then roll off the harsh top
-    targetRms: 0.15, // quieter than the pure colours: sits just above ambient speech
-    stereo: true, // decorrelated L/R noise — wider, harder to listen past
+    loudnessDb: 2, // dB above the common loudness target: a masker has to stay
+    //               above the voices it covers. Keeps the steady track at the
+    //               level it was tuned to (RMS ~0.15); babble now matches it.
     // Babble: synthetic multi-talker "café" murmur. Summing several
     // independently-modulated voices fills each other's dips (so there's no
     // quiet gap for a real voice to peek through, the flaw of single-stream
@@ -71,6 +92,47 @@
   // One-pole filter coefficient for a given cutoff frequency.
   function onePoleCoeff(cutoffHz, sampleRate) {
     return 1 - Math.exp((-2 * Math.PI * cutoffHz) / sampleRate);
+  }
+
+  // --- Stereo ----------------------------------------------------------------
+  //
+  // A playable track yields two channels per step: next() returns the left
+  // sample and leaves the matching right sample in `.right`. The channels carry
+  // independent noise, which sounds wide and is harder to listen past than one
+  // signal copied to both ears; anything that should move together (a wave's
+  // swell, a gust) is shared between them.
+
+  // STEREO_WIDTH as a cross-feed: each ear keeps KEEP of its own noise and takes
+  // BLEED of the other. KEEP² + BLEED² = 1, so the level doesn't change with
+  // the width.
+  const widthAngle =
+    Math.asin(1 - Math.min(1, Math.max(0, STEREO_WIDTH))) / 2;
+  const KEEP = Math.cos(widthAngle);
+  const BLEED = Math.sin(widthAngle);
+
+  function stereoOut(out, l, r) {
+    out.right = KEEP * r + BLEED * l;
+    return KEEP * l + BLEED * r;
+  }
+
+  // Turn a mono factory into a stereo track by running one instance per ear.
+  // The mono factory stays reachable as `.mono` for loudness calibration, which
+  // only needs one channel.
+  function wide(factory) {
+    function create(sampleRate, options) {
+      const a = factory(sampleRate, options);
+      const b = factory(sampleRate, options);
+      const out = {
+        loudnessDb: a.loudnessDb,
+        right: 0,
+        next() {
+          return stereoOut(out, a.next(), b.next());
+        },
+      };
+      return out;
+    }
+    create.mono = factory;
+    return create;
   }
 
   // --- Streaming generators ------------------------------------------------
@@ -221,8 +283,10 @@
   // One synthetic "voice" for the babble: pink noise coloured by two wandering
   // formant resonators (giving a vowel-like timbre) and shaped by its own
   // syllabic-rate amplitude envelope. Many of these summed make a crowd murmur.
-  function createBabbleVoice(sampleRate) {
+  // `speed` runs the syllables and vowel glides faster (calibration only).
+  function createBabbleVoice(sampleRate, speed) {
     const pink = createPink();
+    const glide = 1 - Math.pow(1 - SPEECH.formantGlide, speed);
 
     // Two-pole resonators with poles at radius r: stable, gentle vowel peaks.
     const r = Math.exp((-Math.PI * SPEECH.formantBwHz) / sampleRate);
@@ -244,8 +308,8 @@
         // refresh the resonator coefficients (cheap; they move slowly).
         if (ctrl <= 0) {
           ctrl = SPEECH.ctrlSamples;
-          f1 += SPEECH.formantGlide * (t1 - f1);
-          f2 += SPEECH.formantGlide * (t2 - f2);
+          f1 += glide * (t1 - f1);
+          f2 += glide * (t2 - f2);
           c1 = Math.cos((2 * Math.PI * f1) / sampleRate);
           c2 = Math.cos((2 * Math.PI * f2) / sampleRate);
         }
@@ -258,7 +322,7 @@
           const rateHz =
             SPEECH.babbleMinHz +
             Math.random() * (SPEECH.babbleMaxHz - SPEECH.babbleMinHz);
-          segLen = Math.max(1, Math.floor(sampleRate / rateHz));
+          segLen = Math.max(1, Math.floor(sampleRate / (rateHz * speed)));
           segLeft = segLen;
           const v = VOWELS[(Math.random() * VOWELS.length) | 0];
           t1 = v[0];
@@ -298,12 +362,14 @@
   // its own dips and adds speech-like, informational masking).
   //
   // options.babble selects the source (on unless explicitly false).
+  // options.modSpeed runs the babble faster; calibration uses it (see CAL_SPEED).
   function createSpeechMasking(sampleRate, options) {
     const useBabble = !options || options.babble !== false;
+    const speed = (options && options.modSpeed) || 1;
     const voices = [];
     if (useBabble) {
       for (let i = 0; i < SPEECH.talkers; i++) {
-        voices.push(createBabbleVoice(sampleRate));
+        voices.push(createBabbleVoice(sampleRate, speed));
       }
     }
     const pink = useBabble ? null : createPink();
@@ -317,8 +383,8 @@
     let hp = 0, peakLo = 0, peakHi = 0, shelf = 0, lp = 0;
 
     return {
-      targetRms: SPEECH.targetRms,
-      stereo: SPEECH.stereo,
+      loudnessDb: SPEECH.loudnessDb,
+      calibrateSeconds: 1,
       next() {
         let src;
         if (useBabble) {
@@ -365,7 +431,6 @@
     const aHp = onePoleCoeff(35, sampleRate);
     let lp1 = 0, lp2 = 0, hp = 0;
     return {
-      calibrateSeconds: 1,
       next() {
         const s = brown.next();
         lp1 += aLp1 * (s - lp1);
@@ -378,54 +443,89 @@
 
   // Ocean surf: brown noise under a slow swell that modulates both loudness and
   // brightness, so each wave rises and breaks. Two detuned LFOs keep the rhythm
-  // from sounding mechanically periodic.
-  function createOcean(sampleRate) {
-    const brown = createBrown();
+  // from sounding mechanically periodic. Both ears share the swell (one wave)
+  // but get their own noise.
+  //
+  // options.modSpeed runs the swell faster; calibration uses it (see CAL_SPEED).
+  function createOcean(sampleRate, options) {
+    const speed = (options && options.modSpeed) || 1;
+    const brownL = createBrown(), brownR = createBrown();
+    const TWO_PI = 2 * Math.PI;
     let p1 = 0, p2 = Math.PI / 3;
-    const inc1 = (2 * Math.PI * 0.085) / sampleRate; // ~12 s period
-    const inc2 = (2 * Math.PI * 0.057) / sampleRate; // ~17 s period
-    let lp = 0;
-    return {
-      calibrateSeconds: 8,
+    const inc1 = (TWO_PI * 0.085 * speed) / sampleRate; // ~12 s period
+    const inc2 = (TWO_PI * 0.057 * speed) / sampleRate; // ~17 s period
+    let lpL = 0, lpR = 0;
+    const out = {
+      calibrateSeconds: 4,
+      // A wave's crest sits well above the long-term level, so the ceiling on
+      // that level is lower here than for the steady tracks.
+      maxRms: 0.16,
+      right: 0,
       next() {
         p1 += inc1;
+        if (p1 > TWO_PI) p1 -= TWO_PI;
         p2 += inc2;
+        if (p2 > TWO_PI) p2 -= TWO_PI;
         let swell = 0.5 - 0.25 * Math.cos(p1) - 0.25 * Math.cos(p2); // 0..1
         if (swell < 0) swell = 0;
         const a = onePoleCoeff(250 + swell * 1500, sampleRate); // brighter at crest
-        const s = brown.next();
-        lp += a * (s - lp);
-        return lp * (0.2 + 1.1 * swell); // quieter in the trough
+        const level = 0.2 + 1.1 * swell; // quieter in the trough
+        lpL += a * (brownL.next() - lpL);
+        lpR += a * (brownR.next() - lpR);
+        return stereoOut(out, lpL * level, lpR * level);
       },
     };
+    return out;
   }
 
   // Wind: pink noise through a band-pass whose centre frequency and level wander
-  // slowly, giving rising and falling gusts.
-  function createWind(sampleRate) {
-    const pink = createPink();
+  // slowly, giving rising and falling gusts. Both ears share the gusts but get
+  // their own noise.
+  //
+  // Each gust target is HELD for a few seconds and approached over about a
+  // second. (Picking a new target far more often than the glide can follow —
+  // as an earlier version did, every ~43 ms against a ~0.5 s glide — just
+  // averages the targets away and leaves a steady hiss.)
+  //
+  // options.modSpeed runs the gusts faster; calibration uses it (see CAL_SPEED).
+  function createWind(sampleRate, options) {
+    const speed = (options && options.modSpeed) || 1;
+    const pinkL = createPink(), pinkR = createPink();
+    const glide = 1 - Math.exp(-speed / (1.2 * sampleRate)); // ~1.2 s approach
     let center = 500, targetCenter = 500;
-    let gust = 0.4, targetGust = 0.4;
-    let lpHi = 0, lpLo = 0, ctrl = 0;
-    return {
-      calibrateSeconds: 3,
+    let gust = 0.6, targetGust = 0.6;
+    let hold = 0, ctrl = 0, aHi = 0, aLo = 0;
+    let hiL = 0, loL = 0, hiR = 0, loR = 0;
+    const out = {
+      calibrateSeconds: 4,
+      right: 0,
       next() {
-        if (ctrl <= 0) {
-          ctrl = 2048;
+        if (hold <= 0) {
+          hold = (sampleRate * (2 + Math.random() * 4)) / speed; // 2–6 s a gust
           targetCenter = 220 + Math.random() * 900;
-          targetGust = 0.15 + Math.random() * 0.85;
+          targetGust = 0.25 + Math.random() * 0.75; // a 12 dB range
+        }
+        hold--;
+        center += glide * (targetCenter - center);
+        gust += glide * (targetGust - gust);
+        // The band edges move slowly, so refresh their coefficients at control
+        // rate rather than paying for two exp() calls on every sample.
+        if (ctrl <= 0) {
+          ctrl = 16;
+          aHi = onePoleCoeff(center * 1.7, sampleRate);
+          aLo = onePoleCoeff(center * 0.6, sampleRate);
         }
         ctrl--;
-        center += 0.00004 * (targetCenter - center); // slow glide (~0.5 s)
-        gust += 0.00004 * (targetGust - gust);
-        const aHi = onePoleCoeff(center * 1.7, sampleRate);
-        const aLo = onePoleCoeff(center * 0.6, sampleRate);
-        const w = pink.next();
-        lpHi += aHi * (w - lpHi);
-        lpLo += aLo * (w - lpLo);
-        return (lpHi - lpLo) * gust * 2.2; // band between the cutoffs, gusting
+        const l = pinkL.next(), r = pinkR.next();
+        hiL += aHi * (l - hiL);
+        loL += aLo * (l - loL);
+        hiR += aHi * (r - hiR);
+        loR += aLo * (r - loR);
+        const g = gust * 2.2; // band between the cutoffs, gusting
+        return stereoOut(out, (hiL - loL) * g, (hiR - loR) * g);
       },
     };
+    return out;
   }
 
   // Rain: a band-passed "wash" of distant rain, peppered with discrete droplet
@@ -448,7 +548,6 @@
       d.y2 = 0;
     }
     return {
-      calibrateSeconds: 2,
       next() {
         const b = bed.next();
         bedLo += aBedLo * (b - bedLo);
@@ -474,39 +573,98 @@
     };
   }
 
+  // The playable tracks, all stereo. Ocean and Wind build their own two
+  // channels because the ears must share the swell / the gusts; for the rest,
+  // one independent instance per ear is exactly right (rain even gets its
+  // droplets scattered left and right).
   const generators = {
-    white: createWhite,
-    pink: createPink,
-    brown: createBrown,
-    blue: createBlue,
-    violet: createViolet,
-    grey: createGrey,
-    green: createGreen,
-    black: createBlack,
-    velvet: createVelvet,
-    rain: createRain,
+    white: wide(createWhite),
+    pink: wide(createPink),
+    brown: wide(createBrown),
+    blue: wide(createBlue),
+    violet: wide(createViolet),
+    grey: wide(createGrey),
+    green: wide(createGreen),
+    black: wide(createBlack),
+    velvet: wide(createVelvet),
+    rain: wide(createRain),
     ocean: createOcean,
     wind: createWind,
-    speech: createSpeechMasking,
-    rumble: createRumble,
+    speech: wide(createSpeechMasking),
+    rumble: wide(createRumble),
   };
 
-  // Run the generator for a short warm-up and measure its RMS so we can scale
-  // every noise to a consistent loudness. The warm-up samples are discarded,
-  // but the generator keeps its state, so playback continues seamlessly.
-  function calibrateGain(gen, sampleRate) {
-    const target = gen.targetRms ?? TARGET_RMS;
-    // Slow swells (ocean) and sparse transients (rain) need a longer window to
-    // measure a representative RMS than the steady colours do.
-    const warmup = Math.floor(sampleRate * (gen.calibrateSeconds ?? 0.5));
-    let sumSquares = 0;
-    for (let i = 0; i < warmup; i++) {
-      const v = gen.next();
-      sumSquares += v * v;
+  // --- Loudness calibration ------------------------------------------------
+
+  // A-weighting as a streaming filter: returns a function mapping each input
+  // sample to its weighted value. The standard analogue curve — highpass poles
+  // at 20.6 Hz (twice), 107.7 Hz and 737.9 Hz, lowpass poles at 12194 Hz
+  // (twice) — taken to discrete time one first-order section at a time
+  // (bilinear transform, pre-warped at each pole) and normalised to 0 dB at
+  // 1 kHz.
+  function createAWeighting(sampleRate) {
+    const cos1k = Math.cos((2 * Math.PI * 1000) / sampleRate);
+    const stages = [];
+    let norm = 1;
+    function add(poleHz, highpass) {
+      if (poleHz >= 0.45 * sampleRate) return; // beyond the band at this rate
+      const k = Math.tan((Math.PI * poleHz) / sampleRate);
+      const b = (1 - k) / (1 + k);
+      const g = (highpass ? 1 : k) / (1 + k);
+      stages.push({ highpass, g, b, x1: 0, y1: 0 });
+      // This section's gain at 1 kHz, divided out of the total.
+      const num = highpass ? 2 - 2 * cos1k : 2 + 2 * cos1k;
+      norm /= g * Math.sqrt(num / (1 - 2 * b * cos1k + b * b));
     }
-    const rms = Math.sqrt(sumSquares / warmup) || 1e-6;
-    return target / rms;
+    [20.6, 20.6, 107.7, 737.9].forEach((hz) => add(hz, true));
+    [12194, 12194].forEach((hz) => add(hz, false));
+    return function (x) {
+      for (let i = 0; i < stages.length; i++) {
+        const s = stages[i];
+        const y = s.g * (s.highpass ? x - s.x1 : x + s.x1) + s.b * s.y1;
+        s.x1 = x;
+        s.y1 = y;
+        x = y;
+      }
+      return x * norm;
+    };
   }
 
-  scope.StudyNoiseDSP = { generators, calibrateGain };
+  // Measure a track and return the gain that brings it to the common loudness:
+  //   { gain, rms }  — rms is the plain RMS of the track once that gain is
+  //                    applied (the mixer uses it to keep headroom).
+  // The gain aims for the A-weighted target but never lifts the plain RMS past
+  // MAX_RMS. A throwaway generator is measured, so this never disturbs one that
+  // is playing; it runs on the main thread, and callers cache the result.
+  function calibrate(type, sampleRate, options) {
+    const factory = generators[type].mono || generators[type];
+    const gen = factory(
+      sampleRate,
+      Object.assign({}, options, { modSpeed: CAL_SPEED })
+    );
+    const weigh = createAWeighting(sampleRate);
+
+    // Let the generator's and the weighting filter's states settle first.
+    const settle = Math.floor(sampleRate * 0.25);
+    for (let i = 0; i < settle; i++) weigh(gen.next());
+
+    const count = Math.floor(sampleRate * (gen.calibrateSeconds || 2));
+    let sum = 0, sumA = 0;
+    for (let i = 0; i < count; i++) {
+      const v = gen.next();
+      const a = weigh(v);
+      sum += v * v;
+      sumA += a * a;
+    }
+    const rms = Math.sqrt(sum / count) || 1e-9;
+    const rmsA = Math.sqrt(sumA / count) || 1e-9;
+    const target = Math.pow(
+      10,
+      (TARGET_LOUDNESS_DB + (gen.loudnessDb || 0)) / 20
+    );
+    const gain = Math.min(target / rmsA, (gen.maxRms || MAX_RMS) / rms);
+    return { gain, rms: rms * gain };
+  }
+
+  scope.StudyNoiseDSP = { generators, calibrate };
 })(globalThis);

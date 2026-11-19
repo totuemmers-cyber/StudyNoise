@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StudyNoise</title>
+  <meta name="description" content="Coloured noise, ambiences and sound masking, generated live in your browser. Layer them to focus, relax or sleep." />
+  <meta name="theme-color" content="#0b0b12" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,95 +19,128 @@
 
     <h2 class="group">Colours</h2>
     <div class="noises">
-      <button class="noise" data-type="white">
-        <span class="swatch white"></span>
-        <span class="label">White</span>
-        <span class="desc">Bright, even hiss</span>
-      </button>
-      <button class="noise" data-type="pink">
-        <span class="swatch pink"></span>
-        <span class="label">Pink</span>
-        <span class="desc">Balanced, natural</span>
-      </button>
-      <button class="noise" data-type="brown">
-        <span class="swatch brown"></span>
-        <span class="label">Brown</span>
-        <span class="desc">Deep, rumbling</span>
-      </button>
-      <button class="noise" data-type="blue">
-        <span class="swatch blue"></span>
-        <span class="label">Blue</span>
-        <span class="desc">Hissy, airy highs</span>
-      </button>
-      <button class="noise" data-type="violet">
-        <span class="swatch violet"></span>
-        <span class="label">Violet</span>
-        <span class="desc">Sharp treble</span>
-      </button>
-      <button class="noise" data-type="grey">
-        <span class="swatch grey"></span>
-        <span class="label">Grey</span>
-        <span class="desc">Perceptually even</span>
-      </button>
-      <button class="noise" data-type="green">
-        <span class="swatch green"></span>
-        <span class="label">Green</span>
-        <span class="desc">Mid, nature-like</span>
-      </button>
-      <button class="noise" data-type="black">
-        <span class="swatch black"></span>
-        <span class="label">Black</span>
-        <span class="desc">Ultra-deep rumble</span>
-      </button>
-      <button class="noise" data-type="velvet"
-        title="Sparse noise — mostly silence with scattered impulses. Flat like white, but smoother and silkier.">
-        <span class="swatch velvet"></span>
-        <span class="label">Velvet</span>
-        <span class="desc">Sparse, silky hiss</span>
-      </button>
+      <div class="noise" data-type="white">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">White</span>
+          <span class="desc">Bright, even hiss</span>
+        </button>
+      </div>
+      <div class="noise" data-type="pink">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Pink</span>
+          <span class="desc">Balanced, natural</span>
+        </button>
+      </div>
+      <div class="noise" data-type="brown">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Brown</span>
+          <span class="desc">Deep, rumbling</span>
+        </button>
+      </div>
+      <div class="noise" data-type="blue">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Blue</span>
+          <span class="desc">Hissy, airy highs</span>
+        </button>
+      </div>
+      <div class="noise" data-type="violet">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Violet</span>
+          <span class="desc">Sharp treble</span>
+        </button>
+      </div>
+      <div class="noise" data-type="grey">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Grey</span>
+          <span class="desc">Perceptually even</span>
+        </button>
+      </div>
+      <div class="noise" data-type="green">
+        <button class="noise-btn" type="button" aria-pressed="false">
+          <span class="swatch"></span>
+          <span class="label">Green</span>
+          <span class="desc">Mid, nature-like</span>
+        </button>
+      </div>
+      <div class="noise" data-type="black">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="An ultra-deep rumble. Needs headphones or full-range speakers — phone and laptop speakers can barely reproduce it.">
+          <span class="swatch"></span>
+          <span class="label">Black</span>
+          <span class="desc">Ultra-deep rumble</span>
+        </button>
+      </div>
+      <div class="noise" data-type="velvet">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Sparse noise — mostly silence with scattered impulses. Flat like white, but smoother and silkier.">
+          <span class="swatch"></span>
+          <span class="label">Velvet</span>
+          <span class="desc">Sparse, silky hiss</span>
+        </button>
+      </div>
     </div>
 
     <h2 class="group">Ambience</h2>
     <div class="noises">
-      <button class="noise" data-type="rain"
-        title="Synthesised rainfall — a soft wash with scattered droplets.">
-        <span class="swatch rain"></span>
-        <span class="label">Rain</span>
-        <span class="desc">Soft, scattered drops</span>
-      </button>
-      <button class="noise" data-type="ocean"
-        title="Slow ocean surf — waves that rise and break.">
-        <span class="swatch ocean"></span>
-        <span class="label">Ocean</span>
-        <span class="desc">Rolling surf</span>
-      </button>
-      <button class="noise" data-type="wind"
-        title="Wandering wind with rising and falling gusts.">
-        <span class="swatch wind"></span>
-        <span class="label">Wind</span>
-        <span class="desc">Gentle gusts</span>
-      </button>
+      <div class="noise" data-type="rain">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Synthesised rainfall — a soft wash with scattered droplets.">
+          <span class="swatch"></span>
+          <span class="label">Rain</span>
+          <span class="desc">Soft, scattered drops</span>
+        </button>
+      </div>
+      <div class="noise" data-type="ocean">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Slow ocean surf — waves that rise and break.">
+          <span class="swatch"></span>
+          <span class="label">Ocean</span>
+          <span class="desc">Rolling surf</span>
+        </button>
+      </div>
+      <div class="noise" data-type="wind">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Wandering wind with rising and falling gusts.">
+          <span class="swatch"></span>
+          <span class="label">Wind</span>
+          <span class="desc">Gentle gusts</span>
+        </button>
+      </div>
     </div>
 
     <h2 class="group">Masking</h2>
     <div class="noises">
-      <button class="noise" data-type="speech"
-        title="Noise shaped to the speech band (~250 Hz–6 kHz) to mask the words of nearby voices, like office sound masking.">
-        <span class="swatch speech"></span>
-        <span class="label">Speech Masking</span>
-        <span class="desc">Covers nearby voices</span>
-      </button>
-      <button class="noise" data-type="rumble"
-        title="Low-frequency masker (~40–200 Hz) tuned to cover traffic, footsteps and HVAC thumps.">
-        <span class="swatch rumble"></span>
-        <span class="label">Rumble Masking</span>
-        <span class="desc">Covers traffic &amp; thumps</span>
-      </button>
+      <div class="noise" data-type="speech">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Noise shaped to the speech band (~250 Hz–6 kHz) to mask the words of nearby voices, like office sound masking.">
+          <span class="swatch"></span>
+          <span class="label">Speech Masking</span>
+          <span class="desc">Covers nearby voices</span>
+        </button>
+      </div>
+      <div class="noise" data-type="rumble">
+        <button class="noise-btn" type="button" aria-pressed="false"
+          title="Low-frequency masker (~40–200 Hz) tuned to cover traffic, footsteps and HVAC thumps. Needs headphones or full-range speakers — phone and laptop speakers can barely reproduce it.">
+          <span class="swatch"></span>
+          <span class="label">Rumble Masking</span>
+          <span class="desc">Covers traffic &amp; thumps</span>
+        </button>
+      </div>
     </div>
 
     <div class="controls">
+      <button id="playpause" class="transport" type="button" aria-label="Play" disabled>
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.2"/></svg>
+      </button>
       <label for="volume">Volume</label>
-      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.4" />
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.63" />
     </div>
 
     <div class="controls timer-row">
@@ -123,7 +161,7 @@
       <span>Café babble <span class="toggle-note">(Speech Masking)</span></span>
     </label>
 
-    <p class="hint">Tap a noise to start or stop it.</p>
+    <p class="hint" id="hint" aria-live="polite">Tap sounds to layer them — each gets its own level.</p>
   </main>
 
   <script src="noise-dsp.js"></script>
